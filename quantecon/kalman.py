@@ -311,3 +311,80 @@ class Kalman:
         Sigma_infinity = self.Sigma_infinity
 
         return G @ Sigma_infinity @ G.T + R
+
+
+@jit(nopython=True)
+def filter_estimation(A, C, G, H, x_hat, Σ, y):
+    """
+    Estimates the linear state space model defined by `A`, `C`, `G` and `H` by
+    computing the likelihood and estimating the state and variance.
+    Jit-compiled in `nopython` mode.
+
+    Parameters
+    ----------
+    A : ndarray(float)
+        See `Kalman`.
+    C : ndarray(float)
+        See `Kalman`.
+    G : ndarray(float)
+        See `Kalman`.
+    H : ndarray(float)
+        See `Kalman`.
+    x_hat : ndarray(float)
+        An n x 1 array representing the mean x_hat and covariance
+        matrix Σ of the prior/predictive density.
+    Σ : ndarray(float)
+        An n x n array representing the covariance matrix Sigma of
+        the prior/predictive density. Must be positive definite.
+    y : ndarray(float, ndim=(nrows, ncols))
+        Numpy array containing the data values.
+
+    Returns
+    ----------
+    log_likelihood : ndarray(float, ndim=(nrows, 1))
+        Array contaning the log likelihood for each row of observations.
+    x_hats : ndarray(float, ndim=(x_hat.shape[0], x_hat.shape[1], nrows))
+        Array containing the estimated hidden states.
+    Σs : ndarray(float, ndim=(Σ.shape[0], Σ.shape[1], nrows))
+        Array containing the estimated variances.
+
+    """
+    nrows = y.shape[0]
+
+    # Pre-allocate
+    log_likelihood = np.zeros((nrows, 1))
+    x_hats = np.zeros((x_hat.shape[0], x_hat.shape[1], nrows))
+    Σs = np.zeros((Σ.shape[0], Σ.shape[1], nrows))
+    for t in range(nrows):
+        # Store state estimate for period t
+        x_hats[:, :, t] = x_hat
+        Σs[:, :, t] = Σ
+
+        # Adjust the linear state space model for missing observations
+        observations_location = ~np.isnan(y[t])
+        nb_obs = observations_location.sum()
+
+        _G = G[observations_location, :]
+        _H = H[observations_location, :]
+
+        # Compute the likelihood for period t
+        E = Σ @ _G.T
+        F = _G @ E + _H @ _H.T
+        F_inv = inv(F)
+
+        M = E @ F_inv
+
+        mean = _G @ x_hat
+        demeaned = y[t][observations_location].reshape((nb_obs, 1)) - mean
+
+        log_det_cov = np.log(det(F))
+
+        log_likelihood[t] = (
+            -nb_obs * np.log(2 * np.pi) -
+            (1/2) * (log_det_cov + demeaned.T @ F_inv @ demeaned)
+        )
+
+        x_hat = A @ (x_hat + M @ demeaned)
+        Σ = A @ (Σ - E @ F_inv.T @ E.T) @ A.T + C @ C.T
+
+    return (log_likelihood, x_hats, Σs)
