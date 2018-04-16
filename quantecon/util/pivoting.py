@@ -2,7 +2,7 @@
 Useful routines for pivoting.
 
 """
-
+import numpy as np
 from numba import jit
 
 TOL_PIV = 1e-10

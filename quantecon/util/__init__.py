@@ -6,3 +6,4 @@ from .array import searchsorted
 from .notebooks import fetch_nb_dependencies
 from .random import check_random_state
 from .timing import tic, tac, toc, loop_timer
+from .pivoting import gauss_jordan_pivoting, min_ratio_test
